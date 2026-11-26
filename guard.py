@@ -1,4 +1,4 @@
-"""Where Spacewise may look, decided before a single file is read.
+"""Where Sharewise may look, decided before a single file is read.
 
 Allowed: folders inside the user's own home folder (never the home folder itself) and folders
 on external drives (/Volumes/<drive>/... on macOS, /media or /run/media/<user>/... and /mnt/...
@@ -10,6 +10,11 @@ Inside an allowed folder, the walker also skips hidden items (dot names and the 
 flag), locked items (Finder "Locked"), items it has no permission to read, symlinks, and cloud
 placeholders (iCloud / File Provider files that are not downloaded; reading them would download
 them). Nothing here asks for elevated rights or changes permissions.
+
+TeamShift fork: a workspace's own attachment caches are also allowed. Files a person sends in chat land in the
+gateway's caches under the workspace home (cache/documents, cache/images, cache/videos), which sit in a hidden
+folder or under /opt and so were refused. Only those three folders (and their legacy names) are added, and only
+when the cache folder is a real folder at exactly that place: not a link, never the rest of the workspace home.
 """
 
 from __future__ import annotations
@@ -27,7 +32,7 @@ SF_IMMUTABLE = getattr(stat, "SF_IMMUTABLE", 0x20000)
 SF_DATALESS = getattr(stat, "SF_DATALESS", 0x40000000)
 
 # Directories that are "packages": a library or an app the owning program manages. Moving one
-# file out of them can corrupt the whole thing, so Spacewise never enters them.
+# file out of them can corrupt the whole thing, so Sharewise never enters them.
 PROTECTED_SUFFIXES = (
     ".photoslibrary", ".photolibrary", ".aplibrary", ".migratedphotolibrary",   # Apple Photos / iPhoto / Aperture
     ".lrdata", ".lrlibrary",                                                    # Lightroom previews / libraries
@@ -75,6 +80,35 @@ def _external_roots() -> list[Path]:
                     roots.append(real)
         except OSError:
             continue
+    return roots
+
+
+# Gateway caches for attachments (gateway/platforms/base.py): new path, legacy name.
+ATTACHMENT_CACHES = (("cache/documents", "document_cache"), ("cache/images", "image_cache"), ("cache/videos", "video_cache"))
+
+
+def _hermes_home() -> Optional[Path]:
+    try:
+        from hermes_constants import get_hermes_home
+        return Path(get_hermes_home())
+    except Exception:
+        raw = os.environ.get("HERMES_HOME")
+        return Path(raw) if raw else None
+
+
+def attachment_roots() -> list[Path]:
+    """The workspace's attachment cache folders that exist as real folders where Hermes puts them."""
+    home = _hermes_home()
+    if home is None:
+        return []
+    real_home = Path(os.path.realpath(home))
+    roots: list[Path] = []
+    for new, old in ATTACHMENT_CACHES:
+        for sub in (old, new):
+            p = home / sub
+            # The folder itself and every step below the workspace home must be real folders, not links elsewhere.
+            if p.is_dir() and Path(os.path.realpath(p)) == real_home / sub and real_home / sub not in roots:
+                roots.append(real_home / sub)
     return roots
 
 
@@ -134,9 +168,20 @@ def check(raw: str, cwd: Optional[Path] = None) -> Verdict:
         pass
     real = Path(os.path.realpath(p))
     if not real.exists():
-        return Verdict(False, real, "folder not found (Spacewise does not guess similar names)")
+        return Verdict(False, real, "folder not found (Sharewise does not guess similar names)")
     if not real.is_dir():
         return Verdict(False, real, "not a folder")
+    cache = next((r for r in attachment_roots() if r == real or r in real.parents), None)
+    if cache is not None:
+        cur = cache
+        for part in real.relative_to(cache).parts:
+            cur = cur / part
+            why = is_hidden_or_locked(cur)
+            if why:
+                return Verdict(False, real, f"{why} folder: {cur.name}")
+        if not os.access(real, os.R_OK | os.X_OK):
+            return Verdict(False, real, "no permission to read this folder")
+        return Verdict(True, real, "allowed (the workspace's attachments)")
     home = _home()
     if real == Path("/") or real == Path(real.anchor):
         return Verdict(False, real, "the root of a disk is never scanned; name a specific folder")
@@ -147,7 +192,7 @@ def check(raw: str, cwd: Optional[Path] = None) -> Verdict:
     if not inside_home and not on_external:
         for root in SYSTEM_ROOTS:
             if str(real) == root or str(real).startswith(root + "/"):
-                return Verdict(False, real, "system folder: Spacewise never scans the operating system")
+                return Verdict(False, real, "system folder: Sharewise never scans the operating system")
         if real in (Path("/Users/Shared"), Path("/home/Shared")) or (real.parent in (Path("/Users"), Path("/home")) and real.name == "Shared"):
             return Verdict(False, real, "the shared folder for all users of this computer is outside your home folder")
         if real.parent in (Path("/Users"), Path("/home")) or any(p in (Path("/Users"), Path("/home")) for p in real.parents):
@@ -168,5 +213,5 @@ def check(raw: str, cwd: Optional[Path] = None) -> Verdict:
         if why:
             return Verdict(False, real, f"{why}: {cur.name}")
     if not os.access(real, os.R_OK | os.X_OK):
-        return Verdict(False, real, "no permission to read this folder (macOS may need to grant access); Spacewise does not try to get around it")
+        return Verdict(False, real, "no permission to read this folder; Sharewise does not try to get around it")
     return Verdict(True, real, "allowed")

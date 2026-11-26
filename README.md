@@ -1,3 +1,9 @@
+> **TeamShift fork (enckequity/teamshift#4674).** Metadata-strip-only: `sharewise_check` and `sharewise_share` (clean,
+> verified copies) remain. Apple Vision detection, the local review page, area hiding, selection codes and
+> `sharewise_look` are removed, so numpy and pyobjc are no longer needed. The folder guard also allows the workspace's
+> attachment caches (`cache/documents`, `cache/images`, `cache/videos` under the Hermes home, real folders only).
+> The upstream description below covers features this fork does not ship.
+
 # Sharewise
 
 ![Sharewise: see what your photos reveal, hide what matters, share clean copies](docs/banner.jpg)

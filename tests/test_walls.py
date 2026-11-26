@@ -140,15 +140,35 @@ def test_T6_no_network_shell_or_global_settings():
 def test_heic_is_turned_upright_exactly_once(folder):
     import pillow_heif
     from PIL import ImageOps
-    tools = importlib.import_module("sharewise.tools")
     expected = ImageOps.exif_transpose(pillow_heif.open_heif(str(REAL_HEIC)).to_pillow()).size
-    assert tools.load_upright(folder / "IMG_7296.HEIC").size == expected
     dest = clean.clean_copy(folder / "IMG_7296.HEIC", folder / "Sharewise")
     with Image.open(dest) as im:
         assert im.size == expected and im.getexif().get(274, 1) == 1
 
 
-def test_jpeg_orientation_applied_once(folder):
-    tools = importlib.import_module("sharewise.tools")
-    up = tools.load_upright(folder / "IMG_0001.JPG")                 # stored 640x480 with orientation 6 (rotate 90)
-    assert up.size == (480, 640)
+# TeamShift fork: the workspace's attachment caches are allowed, nothing else in the Hermes home is
+def test_guard_allows_attachment_caches_only(folder, tmp_path):
+    hermes = Path(os.environ["HERMES_HOME"]); home = Path(os.environ["HOME"])
+    docs = hermes / "cache" / "documents"; docs.mkdir(parents=True); (hermes / "cache" / "images").mkdir()
+    (hermes / "memories").mkdir(); (docs / ".hidden").mkdir(); (docs / "inner").mkdir()
+    assert guard.check(str(docs), home).allowed
+    assert guard.check(str(docs / "inner"), home).allowed
+    assert guard.check(str(hermes / "cache" / "images"), home).allowed
+    for p in (hermes, hermes / "cache", hermes / "memories", docs / ".hidden"):
+        assert not guard.check(str(p), home).allowed, p
+    assert not guard.check(str(hermes / "cache" / "videos"), home).allowed          # missing
+
+
+def test_guard_refuses_a_cache_that_is_a_link(folder, tmp_path):
+    hermes = Path(os.environ["HERMES_HOME"]); home = Path(os.environ["HOME"])
+    elsewhere = tmp_path / "elsewhere"; elsewhere.mkdir()
+    (hermes / "cache").mkdir(parents=True); (hermes / "cache" / "documents").symlink_to(elsewhere)
+    assert guard.attachment_roots() == []
+    assert not guard.check(str(hermes / "cache" / "documents"), home).allowed
+    assert not guard.check(str(elsewhere), home).allowed
+
+
+def test_hermes_home_legacy_cache_name(folder):
+    hermes = Path(os.environ["HERMES_HOME"]); home = Path(os.environ["HOME"])
+    legacy = hermes / "document_cache"; legacy.mkdir(parents=True); (legacy / "a.jpg").write_bytes(b"x")
+    assert guard.check(str(legacy), home).allowed

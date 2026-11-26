@@ -1,5 +1,5 @@
-"""Sharewise: see what your photos reveal before you share them, hide faces and street signs for good,
-and share clean copies. Local, no network."""
+"""Sharewise: see what your photos and videos reveal before you share them, and share clean copies without their
+metadata. Local, no network. TeamShift fork: metadata-strip-only (no detection, review page, hiding or visual check)."""
 
 from __future__ import annotations
 
@@ -14,13 +14,11 @@ def register(ctx):
 
     sw = Sharewise(ctx)
     ctx.register_tool(name="sharewise_check", toolset=TOOLSET, schema=schemas.CHECK, handler=sw.check, emoji="🔎")
-    ctx.register_tool(name="sharewise_review", toolset=TOOLSET, schema=schemas.REVIEW, handler=sw.review, emoji="🖼️")
     ctx.register_tool(name="sharewise_share", toolset=TOOLSET, schema=schemas.SHARE, handler=sw.share, emoji="🛡️")
-    ctx.register_tool(name="sharewise_look", toolset=TOOLSET, schema=schemas.LOOK, handler=sw.look, emoji="👁️")
 
     def gate(tool_name=None, args=None, **_):
         # Every sharewise_share call is validated here (unknown arguments and invalid codes are blocked), and
-        # keeping location is escalated to Hermes' approval prompt. The tool refuses to run without this check.
+        # keeping location is escalated to the approval prompt. The tool refuses to run without this check.
         if tool_name != "sharewise_share":
             return None
         try:
@@ -30,7 +28,7 @@ def register(ctx):
 
     ctx.register_hook("pre_tool_call", gate)
     ctx.register_command("sharewise", handler=sw.slash,
-                         description="Literal, no AI: /sharewise check <folder> | apply <code> | detect-test <photo> | guard-test <path>")
+                         description="Literal, no AI: /sharewise check <folder> | guard-test <path>")
     skill = Path(__file__).parent / "skills" / "sharewise" / "SKILL.md"
     if skill.exists():
         ctx.register_skill("sharewise", skill)
